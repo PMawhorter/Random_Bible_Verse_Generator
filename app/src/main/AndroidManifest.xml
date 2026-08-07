@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <queries>
+        <package android:name="net.bible.android" />
+        <package android:name="net.bible.android.activity" />
+        <package android:name="com.subsplash.esv" />
+        <package android:name="com.bytecats.metanoia" />
+        <package android:name="com.sirma.mobile.bible.android" />
+        <package android:name="biblereader.olivetree" />
+        <package android:name="com.tecarta.TecartaBible" />
+        <package android:name="com.logos.androidlogos" />
+        <package android:name="com.logos.androidfaithlife" />
+        <package android:name="org.crosswire.bishop" />
+        <package android:name="com.csnmedia.android.bg" />
+        <package android:name="org.blueletterbible.blb" />
+    </queries>
+
+    <application
+        android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.RandomBibleVerse">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:theme="@style/Theme.RandomBibleVerse"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+
+</manifest>
