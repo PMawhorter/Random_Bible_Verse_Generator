@@ -1,3 +1,19 @@
 <resources>
     <string name="app_name">Random Bible Verse</string>
+    <string name="settings">Settings</string>
+    <string name="versification_scheme">Versification Scheme</string>
+    <string name="close">Close</string>
+    <string name="open_reference_in">Open Reference In&#8230;</string>
+    <string name="cancel">Cancel</string>
+    <string name="generate_reference">Generate Reference</string>
+    <string name="open_reference">Open Reference</string>
+    <string name="copy_reference">Copy Reference</string>
+    <string name="welcome_text">Click the button below\nto get a reference!</string>
+    <string name="all_books">All Books</string>
+    <string name="old_testament">Old Testament</string>
+    <string name="new_testament">New Testament</string>
+    <string name="apocrypha">Apocrypha</string>
+    <string name="open_reference_unavailable">This passage isn\'t available to open in Bible apps. You can still copy it.</string>
+    <string name="open_in_biblegateway_nabre">Open in BibleGateway (NABRE)</string>
+    <string name="bible_gateway_web">BibleGateway (Web)</string>
 </resources>

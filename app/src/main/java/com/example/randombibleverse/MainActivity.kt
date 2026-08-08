@@ -4,16 +4,12 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
-import android.content.pm.LabeledIntent
-import android.net.Uri
 import android.os.Bundle
-import android.os.Parcelable
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -29,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
@@ -37,11 +34,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.edit
 import androidx.core.net.toUri
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.random.Random
 
-// --- Reusable Theme Wrapper ---
+/**
+ * The main theme wrapper for the application, applying a Material 3 color scheme
+ * based on the system's dark mode setting.
+ */
 @Composable
 fun BibleAppTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
@@ -71,6 +72,21 @@ fun BibleAppTheme(
     )
 }
 
+/**
+ * Enumeration of available book filters (All, OT, NT, Apocrypha).
+ * Each type is associated with a string resource for its label.
+ */
+enum class FilterType(val labelResId: Int) {
+    ALL(R.string.all_books),
+    OLD_TESTAMENT(R.string.old_testament),
+    NEW_TESTAMENT(R.string.new_testament),
+    APOCRYPHA(R.string.apocrypha)
+}
+
+/**
+ * Main Activity for the Random Bible Verse application.
+ * Initializes the UI using Jetpack Compose.
+ */
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -87,141 +103,85 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+/**
+ * The primary screen for generating and displaying Bible references.
+ * Handles state for selected schemes, filters, and current verse reference.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BibleReferenceScreen() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val prefs = remember { context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE) }
-    
+
+    // State for the selected versification scheme, persisted in SharedPreferences
     var selectedScheme by remember {
         mutableStateOf(
             try {
                 VersificationScheme.valueOf(
-                    prefs.getString("versification_scheme", VersificationScheme.KJV.name) 
+                    prefs.getString("versification_scheme", VersificationScheme.KJV.name)
                         ?: VersificationScheme.KJV.name
                 )
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 VersificationScheme.KJV
             }
         )
     }
-    
+
+    // Available filters based on the selected versification scheme
     val filterOptions = remember(selectedScheme) {
         when (selectedScheme) {
-            VersificationScheme.KJV, VersificationScheme.NRSV -> 
-                listOf("All Books", "Old Testament", "New Testament")
-            VersificationScheme.CATHOLIC -> 
-                listOf("All Books", "Old Testament", "New Testament", "Apocrypha")
-            VersificationScheme.ORTHODOX -> 
-                listOf("All Books", "Old Testament", "New Testament")
-            VersificationScheme.HEBREW -> 
-                listOf("Old Testament")
+            VersificationScheme.KJV, VersificationScheme.NRSV ->
+                listOf(FilterType.ALL, FilterType.OLD_TESTAMENT, FilterType.NEW_TESTAMENT)
+            VersificationScheme.CATHOLIC ->
+                listOf(FilterType.ALL, FilterType.OLD_TESTAMENT, FilterType.NEW_TESTAMENT, FilterType.APOCRYPHA)
+            VersificationScheme.ORTHODOX ->
+                listOf(FilterType.ALL, FilterType.OLD_TESTAMENT, FilterType.NEW_TESTAMENT, FilterType.APOCRYPHA)
+            VersificationScheme.HEBREW ->
+                listOf(FilterType.OLD_TESTAMENT)
         }
     }
-    
+
     var expanded by remember { mutableStateOf(false) }
     var selectedFilter by remember { mutableStateOf(filterOptions[0]) }
-    
-    // Reset filter if it's no longer available for the current scheme
+
+    // Reset filter if it's no longer available for the current scheme (e.g. switching from Catholic to Hebrew)
     LaunchedEffect(selectedScheme) {
         if (selectedFilter !in filterOptions) {
             selectedFilter = filterOptions[0]
         }
     }
-    
+
     var currentReference by remember { mutableStateOf<BibleReference?>(null) }
     var isSpinning by remember { mutableStateOf(false) }
     var showSettingsDialog by remember { mutableStateOf(false) }
     var showAppChooser by remember { mutableStateOf(false) }
 
-    val resultText = currentReference?.toString() ?: "Click the button below\nto get a reference!"
+    val resultText = currentReference?.toString() ?: stringResource(R.string.welcome_text)
 
-    if (showAppChooser && currentReference != null) {
-        val installedApps = remember(currentReference) { getInstalledBibleApps(context) }
-        
-        AlertDialog(
-            onDismissRequest = { showAppChooser = false },
-            title = { Text("Open Reference In...") },
-            text = {
-                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                    // Always show BibleGateway
-                    AppOptionItem(
-                        label = "BibleGateway (Web)",
-                        onClick = {
-                            openInSpecificApp(context, currentReference!!, "BibleGateway")
-                            showAppChooser = false
-                        }
-                    )
-                    
-                    installedApps.forEach { app ->
-                        AppOptionItem(
-                            label = app.label,
-                            onClick = {
-                                openInSpecificApp(context, currentReference!!, app.packageName)
-                                showAppChooser = false
-                            }
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showAppChooser = false }) {
-                    Text("Cancel")
-                }
-            }
+    // Displays the app chooser for verified passages
+    if (showAppChooser && currentReference != null && currentReference!!.chapter.toIntOrNull() != null) {
+        AppChooserDialog(
+            context = context,
+            currentReference = currentReference!!,
+            onDismiss = { showAppChooser = false }
         )
     }
 
+    // Displays the settings dialog for choosing versification schemes
     if (showSettingsDialog) {
-        AlertDialog(
-            onDismissRequest = { showSettingsDialog = false },
-            title = { Text("Settings") },
-            text = {
-                Column(Modifier.selectableGroup()) {
-                    Text(
-                        text = "Versification Scheme",
-                        style = MaterialTheme.typography.labelLarge,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
-                    VersificationScheme.values().forEach { scheme ->
-                        Row(
-                            Modifier
-                                .fillMaxWidth()
-                                .height(48.dp)
-                                .selectable(
-                                    selected = (scheme == selectedScheme),
-                                    onClick = {
-                                        selectedScheme = scheme
-                                        prefs.edit { putString("versification_scheme", scheme.name) }
-                                    },
-                                    role = Role.RadioButton
-                                )
-                                .padding(horizontal = 16.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            RadioButton(
-                                selected = (scheme == selectedScheme),
-                                onClick = null
-                            )
-                            Text(
-                                text = scheme.label,
-                                style = MaterialTheme.typography.bodyLarge,
-                                modifier = Modifier.padding(start = 16.dp)
-                            )
-                        }
-                    }
-                }
+        SettingsDialog(
+            currentScheme = selectedScheme,
+            onSchemeSelected = { scheme ->
+                selectedScheme = scheme
+                prefs.edit { putString("versification_scheme", scheme.name) }
             },
-            confirmButton = {
-                TextButton(onClick = { showSettingsDialog = false }) {
-                    Text("Close")
-                }
-            }
+            onDismiss = { showSettingsDialog = false }
         )
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
+        // Settings button in top-right corner
         IconButton(
             onClick = { showSettingsDialog = true },
             modifier = Modifier
@@ -242,77 +202,28 @@ fun BibleReferenceScreen() {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            // --- Filter Dropdown ---
-            ExposedDropdownMenuBox(
+            // Dropdown for selecting book filter (All, OT, etc.)
+            FilterDropdown(
+                selectedFilter = selectedFilter,
+                filterOptions = filterOptions,
                 expanded = expanded,
-                onExpandedChange = { expanded = !expanded }
-            ) {
-                OutlinedTextField(
-                    value = selectedFilter,
-                    onValueChange = {},
-                    readOnly = true,
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                    modifier = Modifier.menuAnchor(type = ExposedDropdownMenuAnchorType.PrimaryNotEditable, enabled = true),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = MaterialTheme.colorScheme.surface,
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surface
-                    )
-                )
-                ExposedDropdownMenu(
-                    expanded = expanded,
-                    onDismissRequest = { expanded = false }
-                ) {
-                    filterOptions.forEach { option ->
-                        DropdownMenuItem(
-                            text = { Text(option) },
-                            onClick = {
-                                selectedFilter = option
-                                expanded = false
-                            }
-                        )
-                    }
-                }
-            }
+                onExpandedChange = { expanded = it },
+                onFilterSelected = { selectedFilter = it }
+            )
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // --- Output Display Box ---
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(140.dp)
-                    .background(MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(4.dp))
-                    .border(1.dp, MaterialTheme.colorScheme.outline, shape = RoundedCornerShape(4.dp))
-                    .padding(horizontal = 20.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                AnimatedContent(
-                    targetState = resultText,
-                    transitionSpec = {
-                        (slideInVertically { height -> height } + fadeIn()) togetherWith
-                                (slideOutVertically { height -> -height } + fadeOut())
-                    },
-                    contentAlignment = Alignment.Center,
-                    label = "referenceAnimation"
-                ) { targetText ->
-                    Text(
-                        text = targetText,
-                        fontSize = 20.sp,
-                        fontFamily = FontFamily.Serif,
-                        textAlign = TextAlign.Center,
-                        lineHeight = 28.sp,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-            }
+            // Box displaying the generated reference with a vertical roll animation
+            ReferenceDisplay(resultText = resultText)
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // --- Buttons ---
-            BibleAppButton(
-                text = "Generate Reference",
-                enabled = !isSpinning,
-                onClick = {
+            // Main interaction buttons
+            ReferenceActionButtons(
+                context = context,
+                currentReference = currentReference,
+                isSpinning = isSpinning,
+                onGenerate = {
                     if (!isSpinning) {
                         scope.launch {
                             isSpinning = true
@@ -320,37 +231,245 @@ fun BibleReferenceScreen() {
                             for (i in 0 until spins) {
                                 currentReference = generateUniformReference(selectedFilter, selectedScheme)
                                 val delayMs = 100L + (i * i * 10L)
-                                delay(delayMs)
+                                delay(delayMs.milliseconds)
                             }
                             isSpinning = false
                         }
                     }
-                }
+                },
+                onOpenRequest = { showAppChooser = true }
             )
+        }
+    }
+}
 
-            if (currentReference != null) {
-                Spacer(modifier = Modifier.height(12.dp))
-                BibleAppButton(
-                    text = "Open Reference",
-                    enabled = !isSpinning,
+/**
+ * Dropdown menu for selecting the Bible book filter.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun FilterDropdown(
+    selectedFilter: FilterType,
+    filterOptions: List<FilterType>,
+    expanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
+    onFilterSelected: (FilterType) -> Unit
+) {
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = onExpandedChange
+    ) {
+        OutlinedTextField(
+            value = stringResource(selectedFilter.labelResId),
+            onValueChange = {},
+            readOnly = true,
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            modifier = Modifier.menuAnchor(type = ExposedDropdownMenuAnchorType.PrimaryNotEditable, enabled = true),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedContainerColor = MaterialTheme.colorScheme.surface,
+                unfocusedContainerColor = MaterialTheme.colorScheme.surface
+            )
+        )
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { onExpandedChange(false) }
+        ) {
+            filterOptions.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(stringResource(option.labelResId)) },
                     onClick = {
-                        showAppChooser = true
-                    }
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-                BibleAppButton(
-                    text = "Copy Reference",
-                    enabled = !isSpinning,
-                    onClick = {
-                        val clipboard = context.getSystemService(ClipboardManager::class.java)
-                        val clip = ClipData.newPlainText("Bible Reference", currentReference.toString())
-                        clipboard.setPrimaryClip(clip)
+                        onFilterSelected(option)
+                        onExpandedChange(false)
                     }
                 )
             }
         }
     }
+}
+
+/**
+ * Display box for the current Bible reference with a smooth transition animation.
+ */
+@Composable
+fun ReferenceDisplay(resultText: String) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(140.dp)
+            .background(MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(4.dp))
+            .border(1.dp, MaterialTheme.colorScheme.outline, shape = RoundedCornerShape(4.dp))
+            .padding(horizontal = 20.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        AnimatedContent(
+            targetState = resultText,
+            transitionSpec = {
+                (slideInVertically { height -> height } + fadeIn()) togetherWith
+                        (slideOutVertically { height -> -height } + fadeOut())
+            },
+            contentAlignment = Alignment.Center,
+            label = "referenceAnimation"
+        ) { targetText ->
+            Text(
+                text = targetText,
+                fontSize = 20.sp,
+                fontFamily = FontFamily.Serif,
+                textAlign = TextAlign.Center,
+                lineHeight = 28.sp,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
+    }
+}
+
+/**
+ * Group of buttons for generating, opening, and copying Bible references.
+ */
+@Composable
+fun ReferenceActionButtons(
+    context: Context,
+    currentReference: BibleReference?,
+    isSpinning: Boolean,
+    onGenerate: () -> Unit,
+    onOpenRequest: () -> Unit
+) {
+    BibleAppButton(
+        text = stringResource(R.string.generate_reference),
+        enabled = !isSpinning,
+        onClick = onGenerate
+    )
+
+    currentReference?.let { reference ->
+        val chapterIsNumeric = reference.chapter.toIntOrNull() != null
+        val isCatholicEstherAddition = reference.book == "Esther" && !chapterIsNumeric
+
+        Spacer(modifier = Modifier.height(12.dp))
+        when {
+            chapterIsNumeric -> {
+                BibleAppButton(
+                    text = stringResource(R.string.open_reference),
+                    enabled = !isSpinning,
+                    onClick = onOpenRequest
+                )
+            }
+            isCatholicEstherAddition -> {
+                BibleAppButton(
+                    text = stringResource(R.string.open_in_biblegateway_nabre),
+                    enabled = !isSpinning,
+                    onClick = {
+                        openCatholicEstherAdditionInBibleGateway(context, reference)
+                    }
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(12.dp))
+
+        BibleAppButton(
+            text = stringResource(R.string.copy_reference),
+            enabled = !isSpinning,
+            onClick = {
+                val clipboard = context.getSystemService(ClipboardManager::class.java)
+                val clip = ClipData.newPlainText("Bible Reference", reference.toString())
+                clipboard.setPrimaryClip(clip)
+            }
+        )
+    }
+}
+
+/**
+ * Dialog for choosing an external app or website to open the reference.
+ */
+@Composable
+fun AppChooserDialog(
+    context: Context,
+    currentReference: BibleReference,
+    onDismiss: () -> Unit
+) {
+    val installedApps = remember(currentReference) { getInstalledBibleApps(context) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.open_reference_in)) },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                AppOptionItem(
+                    label = stringResource(R.string.bible_gateway_web),
+                    onClick = {
+                        openInSpecificApp(context, currentReference, "BibleGateway")
+                        onDismiss()
+                    }
+                )
+
+                installedApps.forEach { app ->
+                    AppOptionItem(
+                        label = app.label,
+                        onClick = {
+                            openInSpecificApp(context, currentReference, app.packageName)
+                            onDismiss()
+                        }
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
+        }
+    )
+}
+
+/**
+ * Dialog for selecting the versification scheme.
+ */
+@Composable
+fun SettingsDialog(
+    currentScheme: VersificationScheme,
+    onSchemeSelected: (VersificationScheme) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.settings)) },
+        text = {
+            Column(Modifier.selectableGroup()) {
+                Text(
+                    text = stringResource(R.string.versification_scheme),
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                VersificationScheme.entries.forEach { scheme ->
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .selectable(
+                                selected = (scheme == currentScheme),
+                                onClick = { onSchemeSelected(scheme) },
+                                role = Role.RadioButton
+                            )
+                            .padding(horizontal = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = (scheme == currentScheme),
+                            onClick = null
+                        )
+                        Text(
+                            text = scheme.label,
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier.padding(start = 16.dp)
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.close))
+            }
+        }
+    )
 }
 
 @Composable
@@ -393,6 +512,9 @@ fun AppOptionItem(label: String, onClick: () -> Unit) {
 
 private data class BibleAppInfo(val label: String, val packageName: String)
 
+/**
+ * Checks which of the supported Bible apps are currently installed on the device.
+ */
 private fun getInstalledBibleApps(context: Context): List<BibleAppInfo> {
     val pm = context.packageManager
     val apps = listOf(
@@ -402,71 +524,102 @@ private fun getInstalledBibleApps(context: Context): List<BibleAppInfo> {
         BibleAppInfo("ESV Bible", "com.subsplash.esv"),
         BibleAppInfo("Olive Tree", "biblereader.olivetree"),
         BibleAppInfo("Logos", "com.logos.androidlogos"),
-        BibleAppInfo("Sword Project", "org.crosswire.bishop"),
+        // BibleAppInfo("Sword Project", "org.crosswire.bishop"),
         BibleAppInfo("Metanoia", "com.bytecats.metanoia"),
         BibleAppInfo("Life Bible", "com.tecarta.TecartaBible"),
-        BibleAppInfo("Bible Gateway (App)", "com.csnmedia.android.bg"),
+        // BibleAppInfo("Bible Gateway (App)", "com.csnmedia.android.bg"),
         BibleAppInfo("Blue Letter Bible", "org.blueletterbible.blb")
     )
-    
+
     return apps.filter { app ->
         try {
             pm.getPackageInfo(app.packageName, 0)
             true
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             false
         }
     }
 }
 
+/**
+ * Maps Catholic (NABRE) Esther Addition letter to the logical host chapter in BibleGateway.
+ */
+private val catholicEstherHostChapter = mapOf(
+    "A" to 1,
+    "B" to 3,
+    "C" to 4,
+    "D" to 5,
+    "E" to 8,
+    "F" to 10
+)
+
+/**
+ * Opens Catholic-specific additions to Esther on BibleGateway.
+ */
+private fun openCatholicEstherAdditionInBibleGateway(context: Context, reference: BibleReference) {
+    val hostChapter = catholicEstherHostChapter[reference.chapter] ?: 1
+    val uri = "https://www.biblegateway.com/passage/?search=Esther+$hostChapter&version=NABRE".toUri()
+    val intent = Intent(Intent.ACTION_VIEW, uri).apply {
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    try {
+        context.startActivity(intent)
+    } catch (_: Exception) {
+        android.util.Log.e("BibleApp", "Failed to open BibleGateway for Esther addition")
+    }
+}
+
+/**
+ * Opens a standard Bible reference in a specific external app or website fallback.
+ */
 private fun openInSpecificApp(context: Context, reference: BibleReference, target: String) {
     val usfmCode = BibleData.bookAbbreviations[reference.book] ?: reference.book.take(3).uppercase()
     val osisCode = BibleData.osisAbbreviations[reference.book] ?: usfmCode
-    
-    // Formatting variations
+
+    // Common reference string formats
     val dotRef = "$osisCode.${reference.chapter}.${reference.verse}"
     val plusRef = "${reference.book.replace(" ", "+")}+${reference.chapter}:${reference.verse}"
     val encodedBook = reference.book.replace(" ", "%20")
     val fullDotRef = "$encodedBook.${reference.chapter}.${reference.verse}"
     val metanoiaPath = "${reference.book.replace(" ", "")}/${reference.chapter}/${reference.verse}"
 
-    // Define the primary URI for the chosen service
+    // Construction of the deep link URI based on the target app's required format
     val uri = when (target) {
-        "com.sirma.mobile.bible.android" -> 
+        "com.sirma.mobile.bible.android" ->
             "https://www.bible.com/bible/1/$usfmCode.${reference.chapter}.${reference.verse}".toUri()
-            
-        "net.bible.android", "net.bible.android.activity" -> 
+
+        "net.bible.android", "net.bible.android.activity" ->
             "https://read.andbible.org/$dotRef".toUri()
-            
-        "com.subsplash.esv" -> 
+
+        "com.subsplash.esv" ->
             "https://www.esv.org/$plusRef/".toUri()
-            
-        "biblereader.olivetree" -> 
+
+        "biblereader.olivetree" ->
             "olivetree://bible/$fullDotRef".toUri()
-            
-        "com.logos.androidlogos" -> 
+
+        "com.logos.androidlogos" ->
             "https://ref.ly/$osisCode${reference.chapter}.${reference.verse}".toUri()
-            
-        "org.crosswire.bishop" -> 
-            "bible://$dotRef".toUri()
-            
-        "com.bytecats.metanoia" -> 
+
+        /* "org.crosswire.bishop" ->
+            "bible://$dotRef".toUri() */
+
+        "com.bytecats.metanoia" ->
             "metanoia://bible/$metanoiaPath".toUri()
-            
-        "com.tecarta.TecartaBible" -> 
+
+        "com.tecarta.TecartaBible" ->
             "https://tecartabible.com/bible/$plusRef".toUri()
-            
-        "com.csnmedia.android.bg" -> 
-            "https://www.biblegateway.com/passage/?search=$plusRef&version=KJV".toUri()
-            
-        "org.blueletterbible.blb" -> 
+
+        /* "com.csnmedia.android.bg" ->
+            "https://www.biblegateway.com/passage/?search=$plusRef&version=KJV".toUri() */
+
+        "org.blueletterbible.blb" ->
             "blb://bible/${reference.book.replace(" ", "")}/${reference.chapter}/${reference.verse}".toUri()
-            
+
         else -> // BibleGateway (Web)
             "https://www.biblegateway.com/passage/?search=$plusRef&version=KJV".toUri()
     }
 
-    // Attempt 1: Try to open specifically in the targeted app
+    // Try opening specifically in the targeted app using its package name
     val intent = Intent(Intent.ACTION_VIEW, uri).apply {
         if (target != "BibleGateway") {
             setPackage(target)
@@ -475,13 +628,12 @@ private fun openInSpecificApp(context: Context, reference: BibleReference, targe
     }
 
     try {
-        android.util.Log.d("BibleApp", "Attempting to launch $target with URI: $uri")
+        android.util.Log.d("BibleApp", "Launching deep link for $target: $uri")
         context.startActivity(intent)
     } catch (e: Exception) {
         android.util.Log.e("BibleApp", "Targeted launch failed for $target: ${e.message}")
-        
-        // Attempt 2: If targeted launch fails, try opening the SAME URI in the system browser
-        // This breaks the "BibleGateway monopoly" for apps that use web URLs (like ESV)
+
+        // Fallback: If targeted app fails, try opening the URI in the system browser
         try {
             val browserIntent = Intent(Intent.ACTION_VIEW, uri).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -489,8 +641,8 @@ private fun openInSpecificApp(context: Context, reference: BibleReference, targe
             android.util.Log.d("BibleApp", "Falling back to browser for URI: $uri")
             context.startActivity(browserIntent)
         } catch (e2: Exception) {
-            // Ultimate fallback to BibleGateway if even the browser can't handle the URI (e.g. it's a dead custom scheme)
-            android.util.Log.e("BibleApp", "Browser fallback failed, using BibleGateway")
+            // Ultimate fallback to BibleGateway if even the browser can't handle the URI
+            android.util.Log.e("BibleApp", "Browser fallback failed for $target: ${e2.message}")
             val gatewayIntent = Intent(Intent.ACTION_VIEW, "https://www.biblegateway.com/passage/?search=$plusRef&version=KJV".toUri()).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
@@ -499,54 +651,77 @@ private fun openInSpecificApp(context: Context, reference: BibleReference, targe
     }
 }
 
-fun generateUniformReference(filter: String, scheme: VersificationScheme): BibleReference? {
-    val library = BibleData.getLibrary(scheme)
+/**
+ * Data structure representing a potential verse slot (book + chapter combination).
+ */
+private data class VerseSlot(val book: String, val chapterLabel: String, val maxVerse: Int)
+
+/**
+ * Generates a random Bible reference based on the current filter and versification scheme.
+ * Ensures uniform distribution across all verses in the selected canon.
+ */
+fun generateUniformReference(filter: FilterType, scheme: VersificationScheme): BibleReference? {
+    val apocryphaForScheme: Map<String, List<Int>> = when (scheme) {
+        VersificationScheme.CATHOLIC -> BibleData.catholicApocrypha
+        VersificationScheme.ORTHODOX -> BibleData.catholicApocrypha + BibleData.russianOrthodoxExtras
+        else -> emptyMap()
+    }
+
     val activeData = mutableMapOf<String, List<Int>>()
-    
     when (filter) {
-        "All Books" -> activeData.putAll(library)
-        "Old Testament" -> {
+        FilterType.ALL -> activeData.putAll(BibleData.getLibrary(scheme))
+        FilterType.OLD_TESTAMENT -> {
             activeData.putAll(BibleData.oldTestament)
-            if (scheme == VersificationScheme.CATHOLIC || scheme == VersificationScheme.ORTHODOX) {
-                activeData.putAll(BibleData.apocrypha)
-            }
+            activeData.putAll(apocryphaForScheme)
         }
-        "New Testament" -> {
+        FilterType.NEW_TESTAMENT -> {
             if (scheme != VersificationScheme.HEBREW) {
                 activeData.putAll(BibleData.newTestament)
             }
         }
-        "Apocrypha" -> activeData.putAll(BibleData.apocrypha)
-        "Protestant Canon" -> {
-            activeData.putAll(BibleData.oldTestament)
-            activeData.putAll(BibleData.newTestament)
+        FilterType.APOCRYPHA -> activeData.putAll(apocryphaForScheme)
+    }
+
+    // Extract labeled books (like Catholic Esther) to handle them correctly
+    val labeledBooks = activeData.keys.mapNotNull { book ->
+        BibleData.getLabeledChapters(scheme, book)?.let { book to it }
+    }.toMap()
+    labeledBooks.keys.forEach { activeData.remove(it) }
+
+    // Create a flat list of all available verse slots
+    val slots = mutableListOf<VerseSlot>()
+    for ((book, chapters) in activeData) {
+        chapters.forEachIndexed { chIdx, verseCount ->
+            slots.add(VerseSlot(book, (chIdx + 1).toString(), verseCount))
+        }
+    }
+    for ((book, labeledChapters) in labeledBooks) {
+        labeledChapters.forEach { labeled ->
+            slots.add(VerseSlot(book, labeled.label, labeled.maxVerse))
         }
     }
 
-    var totalVerses = 0
-    for (chapters in activeData.values) {
-        totalVerses += chapters.sum()
-    }
-
+    val totalVerses = slots.sumOf { it.maxVerse }
     if (totalVerses == 0) return null
 
+    // Pick a random verse index and find which slot it belongs to
     val randomVerseIndex = Random.nextInt(1, totalVerses + 1)
 
     var currentCount = 0
-    for ((book, chapters) in activeData) {
-        for ((chIdx, verseCount) in chapters.withIndex()) {
-            if (currentCount + verseCount >= randomVerseIndex) {
-                val targetChapter = chIdx + 1
-                val targetVerse = randomVerseIndex - currentCount
-                return BibleReference(book, targetChapter, targetVerse)
-            }
-            currentCount += verseCount
+    for (slot in slots) {
+        if (currentCount + slot.maxVerse >= randomVerseIndex) {
+            val targetVerse = randomVerseIndex - currentCount
+            return BibleReference(slot.book, slot.chapterLabel, targetVerse)
         }
+        currentCount += slot.maxVerse
     }
 
     return null
 }
 
+/**
+ * Preview function for the BibleReferenceScreen.
+ */
 @Preview(showBackground = true)
 @Composable
 fun BibleReferenceScreenPreview() {

@@ -1,14 +1,32 @@
 package com.example.randombibleverse
 
+/**
+ * Enumeration of supported Bible versification schemes.
+ * Each scheme represents a different way books and chapters are organized.
+ */
 enum class VersificationScheme(val label: String) {
     KJV("KJV (NKJV, ESV, NIV, NASB...)"),
     NRSV("NRSV (RSV, NRSVue)"),
-    CATHOLIC("Catholic (Masoretic text plus Apocrypha)"),
-    ORTHODOX("Orthodox (Septuagint)"),
-    HEBREW("Hebrew (Tanakh)")
+    CATHOLIC("Catholic (NABRE)"),
+    ORTHODOX("Orthodox (Russian / Synodal)"),
+    HEBREW("Hebrew (Tanakh / MT)")
 }
 
+/**
+ * Represents a chapter identified by a label (e.g., "A", "B" in Catholic Esther)
+ * rather than a standard integer.
+ */
+data class LabeledChapter(val label: String, val maxVerse: Int)
+
+/**
+ * Central repository for Bible structure data, including abbreviations,
+ * chapter/verse counts for various canons, and logic for different versification schemes.
+ */
 object BibleData {
+
+    /**
+     * Map of full book names to their standard OSIS abbreviations.
+     */
     val osisAbbreviations = mapOf(
         "Genesis" to "Gen", "Exodus" to "Exod", "Leviticus" to "Lev", "Numbers" to "Num", "Deuteronomy" to "Deut",
         "Joshua" to "Josh", "Judges" to "Judg", "Ruth" to "Ruth", "1 Samuel" to "1Sam", "2 Samuel" to "2Sam",
@@ -25,9 +43,13 @@ object BibleData {
         "Titus" to "Titus", "Philemon" to "Phlm", "Hebrews" to "Heb", "James" to "Jas", "1 Peter" to "1Pet",
         "2 Peter" to "2Pet", "1 John" to "1John", "2 John" to "2John", "3 John" to "3John", "Jude" to "Jude",
         "Revelation" to "Rev", "Tobit" to "Tob", "Judith" to "Jdt", "Wisdom of Solomon" to "Wis",
-        "Sirach" to "Sir", "Baruch" to "Bar", "1 Maccabees" to "1Macc", "2 Maccabees" to "2Macc"
+        "Sirach" to "Sir", "Baruch" to "Bar", "1 Maccabees" to "1Macc", "2 Maccabees" to "2Macc",
+        "3 Maccabees" to "3Macc", "1 Esdras" to "1Esd", "2 Esdras" to "2Esd", "Psalm 151" to "Ps151",
     )
 
+    /**
+     * Map of full book names to their standard USFM/three-letter abbreviations.
+     */
     val bookAbbreviations = mapOf(
         "Genesis" to "GEN", "Exodus" to "EXO", "Leviticus" to "LEV", "Numbers" to "NUM", "Deuteronomy" to "DEU",
         "Joshua" to "JOS", "Judges" to "JDG", "Ruth" to "RUT", "1 Samuel" to "1SA", "2 Samuel" to "2SA",
@@ -44,12 +66,15 @@ object BibleData {
         "Titus" to "TIT", "Philemon" to "PHM", "Hebrews" to "HEB", "James" to "JAS", "1 Peter" to "1PE",
         "2 Peter" to "2PE", "1 John" to "1JN", "2 John" to "2JN", "3 John" to "3JN", "Jude" to "JUD",
         "Revelation" to "REV", "Tobit" to "TOB", "Judith" to "JDT", "Wisdom of Solomon" to "WIS",
-        "Sirach" to "SIR", "Baruch" to "BAR", "1 Maccabees" to "1MA", "2 Maccabees" to "2MA"
+        "Sirach" to "SIR", "Baruch" to "BAR", "1 Maccabees" to "1MA", "2 Maccabees" to "2MA",
+        "3 Maccabees" to "3MA", "1 Esdras" to "1ES", "2 Esdras" to "2ES", "Psalm 151" to "P15",
     )
 
-    // Base data (KJV/Protestant)
+    /**
+     * Chapter and verse counts for the standard Protestant/KJV Old Testament canon.
+     */
     val oldTestament = mapOf(
-        "Genesis" to listOf(31, 25, 24, 26, 32, 22, 24, 22, 29, 32, 32, 20, 18, 24, 21, 16, 27, 33, 38, 34, 34, 24, 20, 67, 34, 35, 46, 22, 35, 43, 55, 32, 20, 31, 29, 43, 36, 30, 26, 23, 57, 38, 34, 31, 28, 34, 31, 22, 33, 26),
+        "Genesis" to listOf(31, 25, 24, 26, 32, 22, 24, 22, 29, 32, 32, 20, 18, 24, 21, 16, 27, 33, 38, 34, 24, 20, 67, 34, 35, 46, 22, 35, 43, 55, 32, 20, 31, 29, 43, 36, 30, 26, 23, 57, 38, 34, 31, 28, 34, 31, 22, 33, 26),
         "Exodus" to listOf(22, 25, 22, 31, 23, 30, 29, 28, 35, 29, 10, 51, 22, 31, 27, 36, 16, 27, 25, 26, 36, 31, 33, 18, 40, 37, 21, 43, 45, 38, 18, 35, 23, 35, 35, 38, 29, 31, 43, 38),
         "Leviticus" to listOf(17, 16, 17, 35, 19, 30, 38, 36, 24, 20, 47, 8, 59, 57, 33, 34, 16, 30, 37, 27, 24, 33, 44, 23, 55, 46, 34),
         "Numbers" to listOf(54, 34, 51, 49, 31, 27, 89, 26, 23, 36, 35, 16, 33, 45, 41, 50, 13, 32, 22, 29, 35, 41, 30, 25, 18, 65, 23, 31, 40, 16, 54, 42, 56, 29, 34, 13),
@@ -87,9 +112,12 @@ object BibleData {
         "Zephaniah" to listOf(18, 15, 20),
         "Haggai" to listOf(15, 23),
         "Zechariah" to listOf(21, 13, 10, 14, 11, 15, 14, 23, 17, 12, 17, 14, 9, 21),
-        "Malachi" to listOf(14, 17, 18, 6)
+        "Malachi" to listOf(14, 17, 18, 6),
     )
 
+    /**
+     * Chapter and verse counts for the standard Protestant/KJV New Testament canon.
+     */
     val newTestament = mapOf(
         "Matthew" to listOf(25, 23, 17, 25, 48, 34, 29, 34, 38, 42, 30, 50, 58, 36, 39, 28, 27, 35, 30, 34, 46, 46, 39, 51, 46, 75, 66, 20),
         "Mark" to listOf(45, 28, 35, 41, 43, 56, 37, 38, 50, 52, 33, 44, 37, 72, 47, 20),
@@ -115,91 +143,120 @@ object BibleData {
         "2 Peter" to listOf(21, 22, 18),
         "1 John" to listOf(10, 29, 24, 21, 21),
         "2 John" to listOf(13),
-        "3 John" to listOf(15),
+        "3 John" to listOf(14),
         "Jude" to listOf(25),
-        "Revelation" to listOf(20, 29, 22, 11, 14, 17, 17, 13, 21, 11, 19, 17, 18, 20, 8, 21, 18, 24, 21, 15, 27, 21)
+        "Revelation" to listOf(20, 29, 22, 11, 14, 17, 17, 13, 21, 11, 19, 17, 18, 20, 8, 21, 18, 24, 21, 15, 27, 21),
     )
 
-    val apocrypha = mapOf(
+    /**
+     * Council of Trent deuterocanon - the books actually in the Catholic Bible.
+     */
+    val catholicApocrypha = mapOf(
         "Tobit" to listOf(22, 23, 17, 21, 22, 18, 17, 21, 12, 13, 19, 22, 18, 15),
         "Judith" to listOf(16, 28, 10, 16, 24, 21, 32, 36, 14, 23, 19, 20, 31, 19),
         "Wisdom of Solomon" to listOf(16, 24, 19, 20, 23, 25, 30, 18, 19, 21, 20, 27, 19, 31, 19, 29, 21, 25, 22),
         "Sirach" to listOf(30, 18, 31, 31, 15, 17, 36, 19, 17, 19, 28, 18, 26, 21, 20, 23, 32, 33, 18, 31, 28, 33, 27, 34, 29, 28, 26, 27, 28, 33, 40, 24, 42, 20, 26, 31, 31, 23, 35, 30, 30, 25, 27, 29, 25, 28, 28, 25, 35, 29, 30),
         "Baruch" to listOf(15, 35, 38, 37, 9, 73),
         "1 Maccabees" to listOf(64, 70, 60, 61, 68, 63, 50, 32, 73, 89, 71, 43, 53, 49, 41, 24),
-        "2 Maccabees" to listOf(36, 32, 40, 61, 27, 31, 42, 36, 29, 38, 38, 45, 27, 46, 39)
+        "2 Maccabees" to listOf(36, 32, 40, 61, 27, 31, 42, 36, 29, 38, 38, 45, 27, 46, 39),
     )
 
-    fun getLibrary(scheme: VersificationScheme): Map<String, List<Int>> {
-        val base = mutableMapOf<String, List<Int>>()
-        when (scheme) {
-            VersificationScheme.HEBREW -> {
-                // Apply Tanakh offsets
-                val tanakhOT = oldTestament.toMutableMap()
-                tanakhOT["Joel"] = listOf(20, 27, 5, 21) // KJV Joel 2:28-32 is Tanakh 3:1-5
-                tanakhOT["Malachi"] = listOf(14, 17, 24) // KJV Malachi 4 is Tanakh 3:19-24
-                
-                // Psalm offsets (titles as verse 1)
-                val tanakhPsalms = oldTestament["Psalms"]?.toMutableList() ?: mutableListOf()
-                // Simple +1 for many psalms as a heuristic for MT
-                val shiftedPsalms = tanakhPsalms.map { it + 1 }
-                tanakhOT["Psalms"] = shiftedPsalms
+    /**
+     * Books added by the Russian Synodal / Russian Orthodox Old Testament.
+     */
+    val russianOrthodoxExtras = mapOf(
+        "1 Esdras" to listOf(58, 30, 24, 63, 73, 34, 15, 96, 55),
+        "2 Esdras" to listOf(40, 48, 36, 52, 56, 59, 140, 63, 47, 59, 46, 51, 58, 48, 63, 78),
+        "3 Maccabees" to listOf(29, 33, 29, 21, 51, 25, 23),
+        "Psalm 151" to listOf(7),
+    )
 
-                base.putAll(tanakhOT)
-            }
-            VersificationScheme.KJV -> {
-                base.putAll(oldTestament)
-                base.putAll(newTestament)
-            }
-            VersificationScheme.NRSV -> {
-                val nrsvNT = newTestament.toMutableMap()
-                // Apply NRSV omissions
-                nrsvNT["Matthew"] = modify(newTestament["Matthew"], listOf(17 to 26, 18 to 34, 23 to 38))
-                nrsvNT["Mark"] = modify(newTestament["Mark"], listOf(7 to 36, 9 to 48, 11 to 32, 15 to 46))
-                nrsvNT["Luke"] = modify(newTestament["Luke"], listOf(17 to 36, 23 to 55))
-                nrsvNT["John"] = modify(newTestament["John"], listOf(5 to 46))
-                nrsvNT["Acts"] = modify(newTestament["Acts"], listOf(8 to 39, 15 to 40, 24 to 26, 28 to 30))
-                nrsvNT["Romans"] = modify(newTestament["Romans"], listOf(16 to 26))
-                
-                val nrsvOT = oldTestament.toMutableMap()
-                nrsvOT["Psalms"] = modify(oldTestament["Psalms"], listOf(145 to 22))
+    /**
+     * Greek additions to Daniel (shared by Catholic and Orthodox).
+     */
+    private val danielWithGreekAdditions: List<Int> =
+        oldTestament.getValue("Daniel") + listOf(64, 42)
 
-                base.putAll(nrsvOT)
-                base.putAll(nrsvNT)
-            }
-            VersificationScheme.CATHOLIC -> {
-                val catholicOT = oldTestament.toMutableMap()
-                // Map Septuagint Psalms (simplified mapping)
-                val lxxPsalms = oldTestament["Psalms"]?.toMutableList() ?: mutableListOf()
-                // This is a complex mapping, using base for now with a note
-                catholicOT["Psalms"] = lxxPsalms
-                
-                base.putAll(catholicOT)
-                base.putAll(newTestament)
-                base.putAll(apocrypha)
-            }
-            VersificationScheme.ORTHODOX -> {
-                val orthodoxOT = oldTestament.toMutableMap()
-                val lxxPsalms = oldTestament["Psalms"]?.toMutableList() ?: mutableListOf()
-                // Orthodox includes Psalm 151
-                val orthodoxPsalms = lxxPsalms + listOf(7) 
-                orthodoxOT["Psalms"] = orthodoxPsalms
-                
-                base.putAll(orthodoxOT)
-                base.putAll(newTestament)
-                base.putAll(apocrypha)
-            }
-        }
-        return base
+    /**
+     * Catholic (NABRE) Esther with lettered Greek Additions.
+     */
+    val catholicEsther: List<LabeledChapter> = listOf(
+        LabeledChapter("A", 17),
+        LabeledChapter("1", 22),
+        LabeledChapter("2", 23),
+        LabeledChapter("3", 15),
+        LabeledChapter("B", 7),
+        LabeledChapter("4", 17),
+        LabeledChapter("C", 30),
+        LabeledChapter("D", 16),
+        LabeledChapter("5", 14),
+        LabeledChapter("6", 14),
+        LabeledChapter("7", 10),
+        LabeledChapter("8", 17),
+        LabeledChapter("E", 24),
+        LabeledChapter("9", 32),
+        LabeledChapter("10", 3),
+        LabeledChapter("F", 11),
+    )
+
+    /**
+     * Accurate Masoretic Text Psalms verse count mapping.
+     */
+    private val masoreticPsalms = listOf(
+        6, 12, 9, 9, 13, 11, 18, 10, 21, 18, 7, 9, 6, 7, 5, 11, 15, 51, 15, 10, 14, 32, 6, 10, 22, 12, 14, 10, 11, 13, 25, 11, 22, 23, 28, 13, 41, 23, 14, 18, 14, 12, 5, 27, 18, 12, 10, 15, 21, 24, 21, 10, 7, 8, 24, 14, 12, 12, 18, 13, 9, 13, 12, 11, 14, 21, 8, 36, 6, 24, 14, 29, 21, 13, 20, 11, 73, 13, 20, 10, 10, 19, 19, 13, 14, 18, 8, 19, 53, 18, 17, 16, 5, 23, 12, 14, 13, 9, 9, 8, 8, 28, 22, 35, 45, 48, 43, 13, 31, 7, 10, 10, 9, 8, 18, 19, 2, 29, 176, 7, 8, 9, 4, 8, 5, 6, 5, 8, 8, 3, 18, 3, 3, 21, 13, 10, 9, 8, 24, 13, 10, 7, 12, 15, 21, 10, 20, 14, 9, 6,
+    )
+
+    /**
+     * Septuagint / Slavonic-Vulgate Psalm renumbering.
+     */
+    private val lxxPsalms = listOf(
+        6, 12, 8, 8, 12, 10, 17, 9, 38, 7, 8, 6, 7, 5, 11, 15, 50, 14, 9, 13, 31, 6, 10, 22, 12, 14, 9, 11, 12, 24, 11, 22, 22, 28, 12, 40, 22, 13, 17, 13, 11, 5, 26, 17, 11, 9, 14, 20, 23, 19, 9, 6, 7, 23, 13, 11, 11, 17, 12, 8, 12, 11, 10, 13, 20, 7, 35, 5, 24, 13, 28, 20, 12, 19, 10, 72, 13, 19, 10, 9, 18, 18, 12, 13, 17, 7, 18, 52, 17, 16, 15, 5, 23, 11, 13, 12, 9, 9, 8, 8, 28, 22, 35, 45, 48, 43, 13, 31, 7, 10, 10, 9, 8, 18, 28, 29, 176, 7, 8, 9, 4, 8, 5, 6, 5, 8, 8, 3, 18, 3, 3, 11, 10, 13, 10, 9, 8, 24, 13, 10, 7, 11, 11, 12, 15, 21, 10, 20, 14, 9, 6,
+    )
+
+    /**
+     * Cached computed maps for each versification scheme to optimize performance.
+     */
+    private val libraries: Map<VersificationScheme, Map<String, List<Int>>> by lazy {
+        val baseKjv = oldTestament + newTestament
+        val hebrew = oldTestament + mapOf(
+            "Joel" to listOf(20, 27, 5, 21),
+            "Malachi" to listOf(14, 17, 24),
+            "Psalms" to masoreticPsalms,
+        )
+        val catholic = oldTestament + newTestament + catholicApocrypha + mapOf(
+            "Psalms" to masoreticPsalms,
+            "Daniel" to danielWithGreekAdditions,
+        )
+        val orthodox = oldTestament + newTestament + catholicApocrypha + russianOrthodoxExtras + mapOf(
+            "Psalms" to lxxPsalms,
+            "Daniel" to danielWithGreekAdditions,
+        )
+
+        mapOf(
+            VersificationScheme.KJV to baseKjv,
+            VersificationScheme.NRSV to baseKjv, // NRSV specific logic can be added here if needed
+            VersificationScheme.HEBREW to hebrew,
+            VersificationScheme.CATHOLIC to catholic,
+            VersificationScheme.ORTHODOX to orthodox,
+        )
     }
 
-    private fun modify(list: List<Int>?, modifications: List<Pair<Int, Int>>): List<Int> {
-        val mutable = list?.toMutableList() ?: return emptyList()
-        for ((chapter, newCount) in modifications) {
-            if (chapter <= mutable.size) {
-                mutable[chapter - 1] = newCount
-            }
+    /**
+     * Retrieves the entire book structure map for a given scheme.
+     * Note: Special cases like Catholic Esther require separate handling.
+     */
+    fun getLibrary(scheme: VersificationScheme): Map<String, List<Int>> {
+        return libraries[scheme] ?: emptyMap()
+    }
+
+    /**
+     * Returns the ordered list of labeled chapters for a specific book/scheme combination.
+     * Currently primarily used for lettered additions in Catholic Esther.
+     */
+    fun getLabeledChapters(scheme: VersificationScheme, book: String): List<LabeledChapter>? {
+        if ((scheme == VersificationScheme.CATHOLIC) && (book == "Esther")) {
+            return catholicEsther
         }
-        return mutable
+        return null
     }
 }
