@@ -112,7 +112,7 @@ object BibleData {
         "Zephaniah" to listOf(18, 15, 20),
         "Haggai" to listOf(15, 23),
         "Zechariah" to listOf(21, 13, 10, 14, 11, 15, 14, 23, 17, 12, 17, 14, 9, 21),
-        "Malachi" to listOf(14, 17, 18, 6)
+        "Malachi" to listOf(14, 17, 18, 6),
     )
 
 
