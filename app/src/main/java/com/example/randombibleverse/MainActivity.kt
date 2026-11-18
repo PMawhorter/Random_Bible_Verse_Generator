@@ -10,6 +10,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -18,6 +19,7 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -34,6 +36,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.edit
 import androidx.core.net.toUri
+import org.json.JSONArray
+import org.json.JSONObject
+import java.text.DateFormat
+import java.util.Calendar
+import java.util.Date
 import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -46,7 +53,7 @@ import kotlin.random.Random
 @Composable
 fun BibleAppTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    content: @Composable () -> Unit
+    content: @Composable () -> Unit,
 ) {
     val colorScheme = if (darkTheme) {
         darkColorScheme(
@@ -107,7 +114,6 @@ class MainActivity : ComponentActivity() {
  * The primary screen for generating and displaying Bible references.
  * Handles state for selected schemes, filters, and current verse reference.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BibleReferenceScreen() {
     val context = LocalContext.current
@@ -155,12 +161,14 @@ fun BibleReferenceScreen() {
     var currentReference by remember { mutableStateOf<BibleReference?>(null) }
     var isSpinning by remember { mutableStateOf(false) }
     var showSettingsDialog by remember { mutableStateOf(false) }
+    var showHistoryDialog by remember { mutableStateOf(false) }
     var showAppChooser by remember { mutableStateOf(false) }
+    var history by remember { mutableStateOf(loadHistory(prefs)) }
 
     val resultText = currentReference?.toString() ?: stringResource(R.string.welcome_text)
 
     // Displays the app chooser for verified passages
-    if (showAppChooser && currentReference != null && currentReference!!.chapter.toIntOrNull() != null) {
+    if (showAppChooser && currentReference != null && (currentReference!!.chapter.toIntOrNull() != null)) {
         AppChooserDialog(
             context = context,
             currentReference = currentReference!!,
@@ -180,7 +188,36 @@ fun BibleReferenceScreen() {
         )
     }
 
+    // Displays the history dialog for viewing generated references from the last 3 months
+    if (showHistoryDialog) {
+        HistoryDialog(
+            history = history,
+            onSelectReference = { ref ->
+                currentReference = ref
+            },
+            onClearHistory = {
+                history = emptyList()
+                saveHistory(prefs, emptyList())
+            },
+            onDismiss = { showHistoryDialog = false }
+        )
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
+        // History button in top-left corner
+        IconButton(
+            onClick = { showHistoryDialog = true },
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(16.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.History,
+                contentDescription = stringResource(R.string.history),
+                tint = MaterialTheme.colorScheme.primary
+            )
+        }
+
         // Settings button in top-right corner
         IconButton(
             onClick = { showSettingsDialog = true },
@@ -190,7 +227,7 @@ fun BibleReferenceScreen() {
         ) {
             Icon(
                 imageVector = Icons.Default.Settings,
-                contentDescription = "Settings",
+                contentDescription = stringResource(R.string.settings),
                 tint = MaterialTheme.colorScheme.primary
             )
         }
@@ -228,12 +265,19 @@ fun BibleReferenceScreen() {
                         scope.launch {
                             isSpinning = true
                             val spins = 8
+                            var finalRef: BibleReference? = null
                             for (i in 0 until spins) {
-                                currentReference = generateUniformReference(selectedFilter, selectedScheme)
+                                finalRef = generateUniformReference(selectedFilter, selectedScheme)
+                                currentReference = finalRef
                                 val delayMs = 100L + (i * i * 10L)
                                 delay(delayMs.milliseconds)
                             }
                             isSpinning = false
+                            finalRef?.let { ref ->
+                                val newItem = HistoryItem(ref, System.currentTimeMillis())
+                                history = (listOf(newItem) + history).filter { isWithinLast3Months(it.timestamp) }
+                                saveHistory(prefs, history)
+                            }
                         }
                     }
                 },
@@ -370,7 +414,7 @@ fun ReferenceActionButtons(
             onClick = {
                 val clipboard = context.getSystemService(ClipboardManager::class.java)
                 val clip = ClipData.newPlainText("Bible Reference", reference.toString())
-                clipboard.setPrimaryClip(clip)
+                clipboard?.setPrimaryClip(clip)
             }
         )
     }
@@ -467,6 +511,133 @@ fun SettingsDialog(
         confirmButton = {
             TextButton(onClick = onDismiss) {
                 Text(stringResource(R.string.close))
+            }
+        }
+    )
+}
+
+/**
+ * Represents a saved Bible reference entry in history with its creation timestamp.
+ */
+data class HistoryItem(
+    val reference: BibleReference,
+    val timestamp: Long
+)
+
+fun isWithinLast3Months(timestamp: Long): Boolean {
+    val calendar = Calendar.getInstance().apply {
+        add(Calendar.MONTH, -3)
+    }
+    return timestamp >= calendar.timeInMillis
+}
+
+private fun loadHistory(prefs: android.content.SharedPreferences): List<HistoryItem> {
+    val jsonString = prefs.getString("reference_history", null) ?: return emptyList()
+    return try {
+        val jsonArray = JSONArray(jsonString)
+        val list = mutableListOf<HistoryItem>()
+        for (i in 0 until jsonArray.length()) {
+            val obj = jsonArray.getJSONObject(i)
+            val timestamp = obj.optLong("timestamp", 0L)
+            if (isWithinLast3Months(timestamp)) {
+                val book = obj.getString("book")
+                val chapter = obj.getString("chapter")
+                val verse = obj.getInt("verse")
+                list.add(HistoryItem(BibleReference(book, chapter, verse), timestamp))
+            }
+        }
+        list.sortedByDescending { it.timestamp }
+    } catch (_: Exception) {
+        emptyList()
+    }
+}
+
+private fun saveHistory(prefs: android.content.SharedPreferences, history: List<HistoryItem>) {
+    val validHistory = history.filter { isWithinLast3Months(it.timestamp) }
+    val jsonArray = JSONArray()
+    for ((reference, timestamp) in validHistory) {
+        val obj = JSONObject().apply {
+            put("book", reference.book)
+            put("chapter", reference.chapter)
+            put("verse", reference.verse)
+            put("timestamp", timestamp)
+        }
+        jsonArray.put(obj)
+    }
+    prefs.edit { putString("reference_history", jsonArray.toString()) }
+}
+
+/**
+ * Dialog for displaying generated Bible reference history from the last 3 months.
+ */
+@Composable
+fun HistoryDialog(
+    history: List<HistoryItem>,
+    onSelectReference: (BibleReference) -> Unit,
+    onClearHistory: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.history)) },
+        text = {
+            if (history.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = stringResource(R.string.no_history),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            } else {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    val dateFormat = remember { DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT) }
+                    history.forEach { item ->
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    onSelectReference(item.reference)
+                                    onDismiss()
+                                }
+                                .padding(vertical = 10.dp, horizontal = 8.dp)
+                        ) {
+                            Text(
+                                text = item.reference.toString(),
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = dateFormat.format(Date(item.timestamp)),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.close))
+            }
+        },
+        dismissButton = {
+            if (history.isNotEmpty()) {
+                TextButton(onClick = onClearHistory) {
+                    Text(
+                        text = stringResource(R.string.clear_history),
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
             }
         }
     )
@@ -708,12 +879,12 @@ fun generateUniformReference(filter: FilterType, scheme: VersificationScheme): B
     val randomVerseIndex = Random.nextInt(1, totalVerses + 1)
 
     var currentCount = 0
-    for (slot in slots) {
-        if (currentCount + slot.maxVerse >= randomVerseIndex) {
+    for ((book, chapterLabel, maxVerse) in slots) {
+        if (currentCount + maxVerse >= randomVerseIndex) {
             val targetVerse = randomVerseIndex - currentCount
-            return BibleReference(slot.book, slot.chapterLabel, targetVerse)
+            return BibleReference(book, chapterLabel, targetVerse)
         }
-        currentCount += slot.maxVerse
+        currentCount += maxVerse
     }
 
     return null

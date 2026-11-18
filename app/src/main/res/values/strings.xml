@@ -16,4 +16,7 @@
     <string name="open_reference_unavailable">This passage isn\'t available to open in Bible apps. You can still copy it.</string>
     <string name="open_in_biblegateway_nabre">Open in BibleGateway (NABRE)</string>
     <string name="bible_gateway_web">BibleGateway (Web)</string>
+    <string name="history">History</string>
+    <string name="no_history">No history in the last 3 months</string>
+    <string name="clear_history">Clear History</string>
 </resources>
